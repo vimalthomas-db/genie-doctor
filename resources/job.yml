@@ -1,0 +1,63 @@
+# Daily refresh: ONE harvest task (conversations + curation/eval in a single process),
+# then the SDP transform, then the diagnostic agent.
+resources:
+  jobs:
+    genie_doctor_refresh:
+      name: genie_doctor_daily_refresh
+      schedule:
+        # 06:00 America/New_York, once a day (per requirement).
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: America/New_York
+        pause_status: UNPAUSED
+
+      tasks:
+        # 1. Single-process harvest: conversations + messages + curation + eval + Level-3
+        #    results, all in one notebook run. Scoped to a FIXED space list (fast — no
+        #    whole-workspace enumeration). SPACE_IDS_FILTER wins; OWNER_PREFIX is the
+        #    fallback for a fresh workspace where the list is unknown.
+        - task_key: harvest
+          notebook_task:
+            notebook_path: ../src/ingest/genie_conversations_harvest.py
+            base_parameters:
+              CATALOG: ${var.catalog}
+              SCHEMA: ${var.schema}
+              SPACE_IDS_FILTER: ${var.space_ids}
+              OWNER_PREFIX: ${var.owner_prefix}
+
+        # 2. Transform bronze -> gold (percentage scorecard).
+        - task_key: transform_gold
+          depends_on:
+            - task_key: harvest
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.genie_doctor_transform.id}
+            full_refresh: false
+
+        # 3. Grounded diagnostic agent -> space_improvements (ranked improvement steps).
+        - task_key: diagnose
+          depends_on:
+            - task_key: transform_gold
+          spark_python_task:
+            python_file: ../src/agent/run_diagnosis.py
+            parameters:
+              - "--catalog=${var.catalog}"
+              - "--schema=${var.schema}"
+          environment_key: default
+
+        # 4. Refresh Lakebase synced tables so the app (reads Postgres) stays current.
+        - task_key: refresh_serving
+          depends_on:
+            - task_key: diagnose
+          spark_python_task:
+            python_file: ../src/agent/refresh_sync.py
+            parameters:
+              - "--pipeline_ids=${var.sync_pipeline_ids}"
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "3"
+            dependencies:
+              - databricks-sdk
+
+      # TODO: on_failure email once owner confirms recipient.

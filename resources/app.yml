@@ -1,0 +1,32 @@
+# The scorecard app (Streamlit). Bound to the Lakebase database (Postgres creds injected)
+# and a SQL warehouse (metadata fallback). Per-target env is set here so the same source
+# is portable across workspaces — no hardcoded host in the app.
+resources:
+  apps:
+    genie-doctor:
+      name: genie-doctor
+      description: Genie fleet-health scorecard (Freshness/Correctness/Feedback/Richness).
+      source_code_path: ../app
+      resources:
+        - name: sql-warehouse
+          description: Fallback warehouse (metadata only; hot path is Postgres).
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+      config:
+        command: ["streamlit", "run", "app.py", "--server.port", "8000", "--server.address", "0.0.0.0"]
+        env:
+          - name: CATALOG
+            value: ${var.catalog}
+          - name: SCHEMA
+            value: ${var.schema}
+          - name: LAKEBASE_INSTANCE
+            value: ${var.lakebase_instance}
+          - name: PGDATABASE
+            value: ${var.lakebase_db}
+          - name: PGHOST
+            value: ${var.pg_host}
+          - name: WORKSPACE_NAME
+            value: ${bundle.target}
+          - name: DATABRICKS_WAREHOUSE_ID
+            value: ${var.warehouse_id}

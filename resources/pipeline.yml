@@ -1,0 +1,19 @@
+# SDP declarative pipeline: BRONZE -> SILVER -> GOLD.
+# Bronze is landed imperatively by the ingestion task (REST APIs can't be a
+# declarative source); this pipeline reads bronze + system.access.audit and
+# materializes the gold scorecard tables with data-quality expectations.
+resources:
+  pipelines:
+    genie_doctor_transform:
+      name: genie_doctor_transform
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      continuous: false
+      photon: true
+      libraries:
+        - file:
+            path: ../src/pipeline/gd_transforms.py
+      configuration:
+        catalog: ${var.catalog}
+        schema: ${var.schema}

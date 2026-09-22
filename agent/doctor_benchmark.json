@@ -1,0 +1,114 @@
+{
+  "_comment": "Genie Doctor's OWN benchmark. Each case is an evidence bundle with a planted (or absent) defect and the categories the agent MUST / MUST NOT flag. The eval harness runs the diagnostic agent over each bundle and measures recall (caught the planted defect) and precision (did not invent problems). This is the Doctor sitting its own exam.",
+  "cases": [
+    {
+      "case_id": "healthy",
+      "description": "Well-curated, benchmarked, high accuracy, no conflicts, valid ground truth.",
+      "evidence": {
+        "title": "Denials Analytics (healthy)",
+        "metrics": {"benchmark_questions_defined": 4, "num_runs": 3, "coverage_pct": 100.0, "benchmark_quality_pct": 100.0, "sql_instructions": 5, "text_instructions": 2, "feedback_positive_pct": 90.0, "thumbs_down": 1, "msgs": 120},
+        "schema": {"claims": ["claim_id", "member_id", "status_label", "reason_desc", "paid_amt"]},
+        "instructions": [
+          {"instruction_id": "t1", "instruction_type": "TEXT_INSTRUCTION", "title": "Definitions", "content": "A DENIAL is a claim where status_label = 'Denied'. Amounts are in USD."},
+          {"instruction_id": "s1", "instruction_type": "SQL_INSTRUCTION", "title": "Top denial reasons", "content": "SELECT reason_desc, COUNT(*) n FROM claims WHERE status_label='Denied' GROUP BY reason_desc ORDER BY n DESC"}
+        ],
+        "benchmark_questions": [
+          {"benchmark_question_id": "b1", "question_text": "Most common denial reason?", "answer_text": "SELECT reason_desc, COUNT(*) n FROM claims WHERE status_label='Denied' GROUP BY reason_desc ORDER BY n DESC LIMIT 1"}
+        ],
+        "benchmark_results": [
+          {"benchmark_question_id": "b1", "question": "Most common denial reason?", "assessment": "GOOD", "expected_sql": "SELECT reason_desc, COUNT(*) n FROM claims WHERE status_label='Denied' GROUP BY reason_desc ORDER BY n DESC LIMIT 1", "actual_sql": "SELECT reason_desc, COUNT(*) AS n FROM claims WHERE status_label='Denied' GROUP BY reason_desc ORDER BY n DESC LIMIT 1"}
+        ]
+      },
+      "expected": {"must_flag": [], "must_not_flag": ["NO_BENCHMARK", "EMPTY_INSTRUCTIONS", "CONFLICTING_INSTRUCTIONS", "BAD_GROUND_TRUTH", "NEGATIVE_FEEDBACK"]}
+    },
+    {
+      "case_id": "no_benchmark",
+      "description": "Decent instructions but zero defined/executed benchmarks.",
+      "evidence": {
+        "title": "Utilization (no benchmark)",
+        "metrics": {"benchmark_questions_defined": 0, "num_runs": 0, "coverage_pct": null, "benchmark_quality_pct": null, "sql_instructions": 4, "text_instructions": 1, "feedback_positive_pct": null, "thumbs_down": 0, "msgs": 40},
+        "schema": {"visits": ["visit_id", "member_id", "dept", "visit_ts"]},
+        "instructions": [
+          {"instruction_id": "t1", "instruction_type": "TEXT_INSTRUCTION", "title": "Scope", "content": "ED utilization by department. One row per visit."}
+        ],
+        "benchmark_questions": [],
+        "benchmark_results": []
+      },
+      "expected": {"must_flag": ["NO_BENCHMARK"], "must_not_flag": ["EMPTY_INSTRUCTIONS", "CONFLICTING_INSTRUCTIONS", "BAD_GROUND_TRUTH"]}
+    },
+    {
+      "case_id": "empty_instructions",
+      "description": "Has benchmarks but no curated instructions at all.",
+      "evidence": {
+        "title": "Raw Space (no instructions)",
+        "metrics": {"benchmark_questions_defined": 3, "num_runs": 1, "coverage_pct": 100.0, "benchmark_quality_pct": 66.0, "sql_instructions": 0, "text_instructions": 0, "feedback_positive_pct": null, "thumbs_down": 0, "msgs": 15},
+        "schema": {"orders": ["order_id", "sku", "qty", "status"]},
+        "instructions": [],
+        "benchmark_questions": [
+          {"benchmark_question_id": "b1", "question_text": "Open orders count", "answer_text": "SELECT COUNT(*) FROM orders WHERE status='OPEN'"}
+        ],
+        "benchmark_results": []
+      },
+      "expected": {"must_flag": ["EMPTY_INSTRUCTIONS"], "must_not_flag": ["NO_BENCHMARK", "CONFLICTING_INSTRUCTIONS"]}
+    },
+    {
+      "case_id": "conflicting_instructions",
+      "description": "Two instructions define 'denial' incompatibly — the classic accuracy killer.",
+      "evidence": {
+        "title": "Denials (conflicting defs)",
+        "metrics": {"benchmark_questions_defined": 2, "num_runs": 2, "coverage_pct": 100.0, "benchmark_quality_pct": 50.0, "sql_instructions": 3, "text_instructions": 1, "feedback_positive_pct": 60.0, "thumbs_down": 3, "msgs": 80},
+        "schema": {"claims": ["claim_id", "member_id", "status_label", "reason_code", "reason_desc"]},
+        "instructions": [
+          {"instruction_id": "t1", "instruction_type": "TEXT_INSTRUCTION", "title": "Definitions", "content": "A DENIAL is a claim where status_label = 'Denied'."},
+          {"instruction_id": "s1", "instruction_type": "SQL_INSTRUCTION", "title": "Denied claims", "content": "SELECT * FROM claims WHERE status_label='Denied'"},
+          {"instruction_id": "s2", "instruction_type": "SQL_INSTRUCTION", "title": "Denials by reason", "content": "SELECT reason_desc, COUNT(*) FROM claims WHERE reason_code IN ('D01','D02','D03') GROUP BY reason_desc"}
+        ],
+        "benchmark_questions": [
+          {"benchmark_question_id": "b1", "question_text": "How many denials?", "answer_text": "SELECT COUNT(*) FROM claims WHERE status_label='Denied'"}
+        ],
+        "benchmark_results": [
+          {"benchmark_question_id": "b1", "question": "How many denials?", "assessment": "BAD", "expected_sql": "SELECT COUNT(*) FROM claims WHERE status_label='Denied'", "actual_sql": "SELECT COUNT(*) FROM claims WHERE reason_code IN ('D01','D02','D03')"}
+        ]
+      },
+      "expected": {"must_flag": ["CONFLICTING_INSTRUCTIONS"], "must_not_flag": ["NO_BENCHMARK", "EMPTY_INSTRUCTIONS"]}
+    },
+    {
+      "case_id": "bad_ground_truth",
+      "description": "Benchmark's expected SQL is itself wrong — references a column not in the schema and contradicts the denial definition.",
+      "evidence": {
+        "title": "Denials (bad ground truth)",
+        "metrics": {"benchmark_questions_defined": 2, "num_runs": 1, "coverage_pct": 100.0, "benchmark_quality_pct": 100.0, "sql_instructions": 2, "text_instructions": 1, "feedback_positive_pct": 85.0, "thumbs_down": 0, "msgs": 30},
+        "schema": {"claims": ["claim_id", "member_id", "status_label", "reason_desc", "paid_amt"]},
+        "instructions": [
+          {"instruction_id": "t1", "instruction_type": "TEXT_INSTRUCTION", "title": "Definitions", "content": "A DENIAL is a claim where status_label = 'Denied'."}
+        ],
+        "benchmark_questions": [
+          {"benchmark_question_id": "b1", "question_text": "Total denied dollars", "answer_text": "SELECT SUM(billed_amt) FROM claims WHERE denial_flag = 1"}
+        ],
+        "benchmark_results": [
+          {"benchmark_question_id": "b1", "question": "Total denied dollars", "assessment": "GOOD", "expected_sql": "SELECT SUM(billed_amt) FROM claims WHERE denial_flag = 1", "actual_sql": "SELECT SUM(billed_amt) FROM claims WHERE denial_flag = 1"}
+        ]
+      },
+      "expected": {"must_flag": ["BAD_GROUND_TRUTH"], "must_not_flag": ["NO_BENCHMARK", "EMPTY_INSTRUCTIONS", "CONFLICTING_INSTRUCTIONS"]}
+    },
+    {
+      "case_id": "negative_feedback",
+      "description": "Benchmarked and instructed, but users are unhappy.",
+      "evidence": {
+        "title": "Appointments (unhappy users)",
+        "metrics": {"benchmark_questions_defined": 3, "num_runs": 2, "coverage_pct": 100.0, "benchmark_quality_pct": 90.0, "sql_instructions": 4, "text_instructions": 2, "feedback_positive_pct": 30.0, "thumbs_down": 14, "msgs": 200},
+        "schema": {"appts": ["appt_id", "member_id", "status", "scheduled_ts"]},
+        "instructions": [
+          {"instruction_id": "t1", "instruction_type": "TEXT_INSTRUCTION", "title": "Scope", "content": "Appointment scheduling metrics. One row per appointment."}
+        ],
+        "benchmark_questions": [
+          {"benchmark_question_id": "b1", "question_text": "No-show rate", "answer_text": "SELECT AVG(CASE WHEN status='NO_SHOW' THEN 1.0 ELSE 0 END) FROM appts"}
+        ],
+        "benchmark_results": [
+          {"benchmark_question_id": "b1", "question": "No-show rate", "assessment": "GOOD", "expected_sql": "SELECT AVG(CASE WHEN status='NO_SHOW' THEN 1.0 ELSE 0 END) FROM appts", "actual_sql": "SELECT AVG(CASE WHEN status='NO_SHOW' THEN 1.0 ELSE 0 END) FROM appts"}
+        ]
+      },
+      "expected": {"must_flag": ["NEGATIVE_FEEDBACK"], "must_not_flag": ["NO_BENCHMARK", "EMPTY_INSTRUCTIONS", "BAD_GROUND_TRUTH"]}
+    }
+  ]
+}

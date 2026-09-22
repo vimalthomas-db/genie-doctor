@@ -1,0 +1,68 @@
+# Lakebase serving — self-contained: the bundle creates the Postgres instance, registers
+# it as a UC catalog, and mirrors each gold table into Postgres so the app reads PG (ms
+# latency). SNAPSHOT policy suits a once-daily refresh; the job re-triggers the syncs.
+resources:
+  database_instances:
+    genie_doctor_db:
+      name: ${var.lakebase_instance}
+      capacity: CU_1
+
+  # UC catalog over the instance + logical Postgres database (created if missing).
+  database_catalogs:
+    genie_doctor_lb:
+      name: ${var.lakebase_catalog}
+      database_instance_name: ${var.lakebase_instance}
+      database_name: ${var.lakebase_db}
+      create_database_if_not_exists: true
+
+  # One synced table per gold table the app queries. name = UC three-part in the Lakebase
+  # catalog; source = the Delta gold table; PK required.
+  synced_database_tables:
+    space_scorecard_sync:
+      name: ${var.lakebase_catalog}.public.space_scorecard
+      database_instance_name: ${var.lakebase_instance}
+      logical_database_name: ${var.lakebase_db}
+      spec:
+        source_table_full_name: ${var.catalog}.${var.schema}.space_scorecard
+        scheduling_policy: SNAPSHOT
+        primary_key_columns: [space_id]
+    fleet_rollup_sync:
+      name: ${var.lakebase_catalog}.public.fleet_rollup
+      database_instance_name: ${var.lakebase_instance}
+      logical_database_name: ${var.lakebase_db}
+      spec:
+        source_table_full_name: ${var.catalog}.${var.schema}.fleet_rollup
+        scheduling_policy: SNAPSHOT
+        primary_key_columns: [snapshot_date]
+    space_improvements_sync:
+      name: ${var.lakebase_catalog}.public.space_improvements
+      database_instance_name: ${var.lakebase_instance}
+      logical_database_name: ${var.lakebase_db}
+      spec:
+        source_table_full_name: ${var.catalog}.${var.schema}.space_improvements
+        scheduling_policy: SNAPSHOT
+        primary_key_columns: [space_id, rank]
+    feedback_flags_sync:
+      name: ${var.lakebase_catalog}.public.feedback_flags
+      database_instance_name: ${var.lakebase_instance}
+      logical_database_name: ${var.lakebase_db}
+      spec:
+        source_table_full_name: ${var.catalog}.${var.schema}.feedback_flags
+        scheduling_policy: SNAPSHOT
+        primary_key_columns: [message_id]
+    benchmark_run_trend_sync:
+      name: ${var.lakebase_catalog}.public.benchmark_run_trend
+      database_instance_name: ${var.lakebase_instance}
+      logical_database_name: ${var.lakebase_db}
+      spec:
+        source_table_full_name: ${var.catalog}.${var.schema}.benchmark_run_trend
+        scheduling_policy: SNAPSHOT
+        primary_key_columns: [eval_run_id]
+    benchmark_question_matrix_sync:
+      name: ${var.lakebase_catalog}.public.benchmark_question_matrix
+      database_instance_name: ${var.lakebase_instance}
+      logical_database_name: ${var.lakebase_db}
+      spec:
+        source_table_full_name: ${var.catalog}.${var.schema}.benchmark_question_matrix
+        scheduling_policy: SNAPSHOT
+        primary_key_columns: [result_id]

@@ -1,0 +1,30 @@
+# Databricks bundle local state / auth
+.databricks/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Secrets / tokens / credentials
+.env
+*.env
+*.token
+*_token*
+*token.txt
+obo_tokens*.txt
+secrets*
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Vendored reference copy of another team's repo (databricks-field-eng/genie-monitoring)
+# Not our code — keep out of this repo's history.
+_ref_genie_monitoring/
