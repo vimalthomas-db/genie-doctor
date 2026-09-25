@@ -159,10 +159,22 @@ st.markdown(f"""
 </style>""", unsafe_allow_html=True)
 
 # --------------------------------------------------------------------------- data
+# The serving backend is an explicit CHOICE, set by the SERVING_BACKEND env var:
+#   lakehouse  -> read the gold Delta tables through the bound SQL warehouse
+#                 (Statement Execution API). No Lakebase dependency — always available.
+#   lakebase   -> read the Postgres mirror of those gold tables (ms latency). Needs a
+#                 provisioned Lakebase instance + PG host/user; degrades to lakehouse if
+#                 it is not configured or not reachable.
+#   auto       -> use lakebase when it is configured AND reachable, else lakehouse.
+# Both backends run the SAME unqualified SQL (`SELECT ... FROM space_scorecard`): the
+# warehouse call qualifies it with CATALOG/SCHEMA, Postgres resolves it on search_path.
+SERVING_BACKEND = os.environ.get("SERVING_BACKEND", "auto").strip().lower()
 LAKEBASE_INSTANCE = os.environ.get("LAKEBASE_INSTANCE", "genie-doctor-db")
 PGHOST = os.environ.get("PGHOST") or os.environ.get("DATABRICKS_DATABASE_HOST")
 PGDATABASE = os.environ.get("PGDATABASE") or os.environ.get("DATABRICKS_DATABASE_NAME") or "genie_doctor"
 PGUSER = os.environ.get("PGUSER") or os.environ.get("DATABRICKS_CLIENT_ID")
+
+SOURCE = {"used": "?", "backend": None, "note": ""}
 
 
 @st.cache_resource
@@ -182,6 +194,30 @@ def pg_conn():
     return conn
 
 
+def _lakebase_configured() -> bool:
+    return bool(PGHOST and PGUSER)
+
+
+@st.cache_resource(show_spinner=False)
+def active_backend() -> str:
+    """Resolve the serving backend ONCE, honoring SERVING_BACKEND and degrading safely
+    to the Lakehouse warehouse when Lakebase is absent or unreachable."""
+    choice = SERVING_BACKEND if SERVING_BACKEND in ("lakehouse", "lakebase", "auto") else "auto"
+    if choice == "lakehouse":
+        return "lakehouse"
+    if not _lakebase_configured():
+        if choice == "lakebase":
+            SOURCE["note"] = ("SERVING_BACKEND=lakebase but no Postgres host/user is "
+                              "configured — using the Lakehouse warehouse.")
+        return "lakehouse"
+    try:                       # lakebase or auto, and PG is configured — probe it once.
+        pg_conn()
+        return "lakebase"
+    except Exception as e:
+        SOURCE["note"] = f"Lakebase unreachable ({str(e)[:70]}) — using the Lakehouse warehouse."
+        return "lakehouse"
+
+
 def _q_pg(sql):
     with pg_conn().cursor() as cur:
         cur.execute(sql)
@@ -192,6 +228,9 @@ def _q_pg(sql):
 
 def _q_warehouse(sql):
     import time
+    if not WAREHOUSE_ID:
+        raise RuntimeError("Lakehouse backend needs a SQL warehouse, but WAREHOUSE_ID is "
+                           "unset — bind one to the app in resources/app.yml.")
     r = client().statement_execution.execute_statement(
         warehouse_id=WAREHOUSE_ID, statement=sql, catalog=CATALOG, schema=SCHEMA, wait_timeout="50s")
     while r.status.state.value in ("PENDING", "RUNNING"):
@@ -202,19 +241,18 @@ def _q_warehouse(sql):
     return pd.DataFrame([dict(zip(cols, row)) for row in (r.result.data_array or [])])
 
 
-SOURCE = {"used": "?"}
-
-
 @st.cache_data(ttl=300, show_spinner=False)
 def q(sql):
-    if PGHOST and PGUSER:
+    if active_backend() == "lakebase":
         try:
-            df = _q_pg(sql); SOURCE["used"] = "Lakebase (Postgres)"; return df
-        except Exception as e:
-            SOURCE["used"] = f"warehouse (PG failed: {str(e)[:50]})"
-    else:
-        SOURCE["used"] = "warehouse"
-    return _q_warehouse(sql)
+            df = _q_pg(sql)
+            SOURCE.update(used="Lakebase (Postgres)", backend="lakebase")
+            return df
+        except Exception as e:      # per-query safety net: degrade to the warehouse.
+            SOURCE["note"] = f"Lakebase query failed ({str(e)[:60]}) — fell back to Lakehouse."
+    df = _q_warehouse(sql)
+    SOURCE.update(used="Lakehouse (warehouse · Delta)", backend="lakehouse")
+    return df
 
 
 def _num(v):
@@ -581,7 +619,8 @@ def render_summary():
     st.markdown(
         f"<div class='gd-shell'>"
         f"<aside class='gd-rail gd-rail-sum'><div class='gd-kwrap'>{rail_kpis}</div>"
-        f"<div class='gd-railfoot'>Source: {SOURCE['used']}<br>{CATALOG}.{SCHEMA}</div>"
+        f"<div class='gd-railfoot'>Source: {SOURCE['used']}<br>{CATALOG}.{SCHEMA}"
+        f"{('<br>⚠ ' + SOURCE['note']) if SOURCE['note'] else ''}</div>"
         f"</aside>"
         f"<main class='gd-main'>{main_h}{body}</main>"
         f"</div>",

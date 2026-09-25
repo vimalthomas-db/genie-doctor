@@ -19,7 +19,7 @@ def main():
     ap.add_argument("--warehouse", required=True)
     ap.add_argument("--catalog", required=True)
     ap.add_argument("--schema", required=True)
-    ap.add_argument("--instance", required=True)
+    ap.add_argument("--instance", default="")   # omitted for the Lakehouse backend
     ap.add_argument("--lakebase_db", default="genie_doctor")
     ap.add_argument("--app", default="genie-doctor")
     a = ap.parse_args()
@@ -44,7 +44,10 @@ def main():
         st, err = sql(stmt)
         print(f"[grants] UC {st}: {stmt.split(' TO ')[0]}" + (f"  ({err[:90]})" if err else ""))
 
-    # --- B) Postgres fast-path grants (best-effort) ---
+    # --- B) Postgres fast-path grants (best-effort; Lakebase backend only) ---
+    if not a.instance:
+        print("[grants] no Lakebase instance (Lakehouse backend) — skipping Postgres grants.")
+        return
     try:
         import psycopg2
         inst = w.database.get_database_instance(name=a.instance)

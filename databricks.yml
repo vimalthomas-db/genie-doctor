@@ -9,10 +9,28 @@
 bundle:
   name: genie-doctor
 
+# Two serving "versions" — pick with the `serving_backend` variable:
+#   lakehouse (default) -> the app reads gold Delta through the bound SQL warehouse.
+#                          NO Lakebase needed; deploys cleanly in any workspace.
+#   lakebase            -> the app reads a Postgres mirror (ms latency). To enable it:
+#                            1) uncomment `resources/database.yml` in `include:` below,
+#                            2) set  serving_backend: lakebase  on the target,
+#                            3) provide pg_host (deploy.sh captures it automatically).
 include:
-  - resources/*.yml
+  - resources/app.yml
+  - resources/job.yml
+  - resources/pipeline.yml
+  # Lakebase serving layer (instance + UC catalog + synced tables). OPTIONAL — uncomment
+  # ONLY when serving_backend=lakebase, otherwise deploy stays Lakebase-free.
+  # - resources/database.yml
 
 variables:
+  serving_backend:
+    description: >-
+      Where the app reads its gold tables: `lakehouse` (SQL warehouse over Delta, no
+      Lakebase dependency — default) or `lakebase` (Postgres mirror). `auto` uses
+      Lakebase when configured+reachable, else Lakehouse.
+    default: lakehouse
   catalog:
     description: UC catalog for bronze + gold tables (must exist or be creatable).
     default: main
@@ -60,6 +78,7 @@ targets:
     workspace:
       host: https://adb-984752964297111.11.azuredatabricks.net
     variables:
+      serving_backend: lakehouse    # reads gold Delta via the warehouse — no Lakebase needed
       catalog: vjoseph_pbi_demo
       schema: genie_monitoring
       owner_prefix: ""

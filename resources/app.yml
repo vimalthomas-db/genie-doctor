@@ -16,17 +16,23 @@ resources:
       config:
         command: ["streamlit", "run", "app.py", "--server.port", "8000", "--server.address", "0.0.0.0"]
         env:
+          # Backend selector: lakehouse (default) | lakebase | auto.
+          - name: SERVING_BACKEND
+            value: ${var.serving_backend}
           - name: CATALOG
             value: ${var.catalog}
           - name: SCHEMA
             value: ${var.schema}
-          - name: LAKEBASE_INSTANCE
-            value: ${var.lakebase_instance}
-          - name: PGDATABASE
-            value: ${var.lakebase_db}
-          - name: PGHOST
-            value: ${var.pg_host}
           - name: WORKSPACE_NAME
             value: ${bundle.target}
           - name: DATABRICKS_WAREHOUSE_ID
             value: ${var.warehouse_id}
+          # --- Lakebase serving (uncomment ONLY when serving_backend=lakebase) ---
+          # The Apps API rejects an empty env value, so these stay commented for the
+          # Lakehouse default (where pg_host is blank) and are enabled for Lakebase.
+          # - name: LAKEBASE_INSTANCE
+          #   value: ${var.lakebase_instance}
+          # - name: PGDATABASE
+          #   value: ${var.lakebase_db}
+          # - name: PGHOST
+          #   value: ${var.pg_host}
